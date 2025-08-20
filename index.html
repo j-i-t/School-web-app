@@ -45,6 +45,7 @@
             this.shotCooldown=1500;
             this.frameCount=0;
             this.stats={totalShots:0,makes:0,misses:0,accuracy:0};
+            this.prevWristY=null;
             this.init();
         }
 
@@ -80,13 +81,19 @@
                 const rShoulder=results.poseLandmarks[12];
                 if(rWrist && rShoulder){
                     const now=Date.now();
-                    if(rWrist.y<rShoulder.y && now-this.lastShotTime>this.shotCooldown){
-                        this.lastShotTime=now;
-                        const made=Math.random()>0.5;
-                        this.shotsHistory.unshift({result:made?'make':'miss'});
-                        this.updateStats();
-                        this.showShotDetected();
+
+                    // Detect a quick upward flick of the wrist (velocity check)
+                    if(this.prevWristY!==null){
+                        const velocity=(this.prevWristY-rWrist.y); // positive if moving up fast
+                        if(rWrist.y<rShoulder.y && velocity>0.02 && now-this.lastShotTime>this.shotCooldown){
+                            this.lastShotTime=now;
+                            const made=Math.random()>0.5;
+                            this.shotsHistory.unshift({result:made?'make':'miss'});
+                            this.updateStats();
+                            this.showShotDetected();
+                        }
                     }
+                    this.prevWristY=rWrist.y;
                 }
             }
         }
