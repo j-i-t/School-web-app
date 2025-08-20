@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Basketball Shot Tracker</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mediapipe/0.10.3/pose.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mediapipe/0.10.3/hands.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mediapipe/0.10.3/camera_utils.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mediapipe/0.10.3/drawing_utils.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            color: white;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 3em;
+            font-weight: bold;
+            background: linear-gradient(45deg, #ff6b6b, #ffd93d, #6bcf7f);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 10px;
+            text-shadow: 0 0 30px rgba(255, 255, 255, 0.3);
+        }
+
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+            margin-bottom: 20px;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            gap: 30px;
+            align-items: start;
+        }
+
+        .video-container {
+            position: relative;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        #videoElement {
+            width: 100%;
+            height: auto;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+        }
+
+        #canvasElement {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            border-radius: 15px;
+            pointer-events: none;
+        }
+
+        .controls {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .btn {
+            background: linear-gradient(45deg, #ff6b6b, #ffd93d);
+            border: none;
+            color: white;
+            padding: 15px 30px;
+            font-size: 1.1em;
+            font-weight: bold;
+            border-radius: 50px;
+            cursor: pointer;
+            margin: 0 10px;
+            transition: all 0.3s ease;
+            box-shadow: 0 8px 20px rgba(255, 107, 107, 0.3);
+        }
+
+        .btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 30px rgba(255, 107, 107, 0.4);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .stats-panel {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            padding: 25px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .stats-panel h2 {
+            font-size: 1.8em;
+            margin-bottom: 20px;
+            text-align: center;
+            color: #ffd93d;
+        }
+
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            font-size: 1.1em;
+        }
+
+        .stat-item:last-child {
+            border-bottom: none;
+        }
+
+        .stat-label {
+            font-weight: 500;
+            opacity: 0.9;
+        }
+
+        .stat-value {
+            font-weight: bold;
+            color: #6bcf7f;
+        }
+
+        .accuracy-circle {
+            width: 120px;
+            height: 120px;
+            margin: 20px auto;
+            position: relative;
+        }
+
+        .accuracy-circle svg {
+            width: 100%;
+            height: 100%;
+            transform: rotate(-90deg);
+        }
+
+        .accuracy-circle circle {
+            fill: none;
+            stroke-width: 8;
+        }
+
+        .accuracy-bg {
+            stroke: rgba(255, 255, 255, 0.1);
+        }
+
+        .accuracy-fill {
+            stroke: #6bcf7f;
+            stroke-linecap: round;
+            transition: stroke-dashoffset 0.5s ease;
+        }
+
+        .accuracy-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #6bcf7f;
+        }
+
+        .recent-shots {
+            margin-top: 20px;
+        }
+
+        .recent-shots h3 {
+            color: #ffd93d;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .shots-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .shot-result {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5em;
+            font-weight: bold;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        .shot-make {
+            background: linear-gradient(45deg, #6bcf7f, #4ecdc4);
+            color: white;
+        }
+
+        .shot-miss {
+            background: linear-gradient(45deg, #ff6b6b, #ff8e53);
+            color: white;
+        }
+
+        .shot-detected {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: #ffd93d;
+            padding: 20px 40px;
+            border-radius: 15px;
+            font-size: 2em;
+            font-weight: bold;
+            z-index: 1000;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .shot-detected.show {
+            opacity: 1;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            margin: 0 auto 20px;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-top: 4px solid #ffd93d;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 1024px) {
+            .main-content {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+            
+            .header h1 {
+                font-size: 2.5em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏀 Basketball Shot Tracker</h1>
+            <p>AI-powered shot analysis using computer vision</p>
+        </div>
+
+        <div id="loading" class="loading">
+            <div class="spinner"></div>
+            <p>Initializing AI models...</p>
+        </div>
+
+        <div id="mainApp" class="main-content" style="display: none;">
+            <div class="video-container">
+                <video id="videoElement" autoplay muted playsinline></video>
+                <canvas id="canvasElement"></canvas>
+                <div class="controls">
+                    <button id="startBtn" class="btn">Start Tracking</button>
+                    <button id="stopBtn" class="btn" disabled>Stop Tracking</button>
+                    <button id="resetBtn" class="btn">Reset Stats</button>
+                    <button id="saveBtn" class="btn">Save Session</button>
+                </div>
+            </div>
+
+            <div class="stats-panel">
+                <h2>📊 Session Stats</h2>
+                
+                <div class="accuracy-circle">
+                    <svg>
+                        <circle class="accuracy-bg" cx="60" cy="60" r="50"></circle>
+                        <circle class="accuracy-fill" cx="60" cy="60" r="50" 
+                                stroke-dasharray="314" stroke-dashoffset="314"></circle>
+                    </svg>
+                    <div class="accuracy-text">0%</div>
+                </div>
+
+                <div class="stat-item">
+                    <span class="stat-label">Total Shots</span>
+                    <span class="stat-value" id="totalShots">0</span>
+                </div>
+                
+                <div class="stat-item">
+                    <span class="stat-label">Makes</span>
+                    <span class="stat-value" id="makes">0</span>
+                </div>
+                
+                <div class="stat-item">
+                    <span class="stat-label">Misses</span>
+                    <span class="stat-value" id="misses">0</span>
+                </div>
+                
+                <div class="stat-item">
+                    <span class="stat-label">Avg Release Angle</span>
+                    <span class="stat-value" id="avgReleaseAngle">-°</span>
+                </div>
+                
+                <div class="stat-item">
+                    <span class="stat-label">Avg Elbow Angle</span>
+                    <span class="stat-value" id="avgElbowAngle">-°</span>
+                </div>
+
+                <div class="recent-shots">
+                    <h3>Recent Shots</h3>
+                    <div class="shots-grid" id="recentShots">
+                        <!-- Recent shot results will appear here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="shotDetected" class="shot-detected">
+        🏀 SHOT DETECTED!
+    </div>
+
+    <script>
+        class BasketballShotTracker {
+            constructor() {
+                this.isTracking = false;
+                this.pose = null;
+                this.hands = null;
+                this.camera = null;
+                this.videoElement = document.getElementById('videoElement');
+                this.canvasElement = document.getElementById('canvasElement');
+                this.canvasCtx = this.canvasElement.getContext('2d');
+                
+                // Shot tracking variables
+                this.shotsHistory = [];
+                this.lastShotTime = 0;
+                this.shotCooldown = 3000; // 3 seconds in milliseconds
+                this.handPositions = [];
+                this.maxHandPositions = 15;
+                
+                // Shooting motion parameters
+                this.releaseHeightThreshold = 0.3;
+                this.armExtensionThreshold = 150;
+                this.wristSnapThreshold = 0.2;
+                
+                // Statistics
+                this.stats = {
+                    totalShots: 0,
+                    makes: 0,
+                    misses: 0,
+                    accuracy: 0.0,
+                    avgReleaseAngle: 0.0,
+                    avgElbowAngle: 0.0
+                };
+                
+                this.init();
+            }
+            
+            async init() {
+                try {
+                    // Initialize MediaPipe Pose
+                    this.pose = new Pose({
+                        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+                    });
+                    
+                    this.pose.setOptions({
+                        modelComplexity: 1,
+                        smoothLandmarks: true,
+                        enableSegmentation: false,
+                        smoothSegmentation: true,
+                        minDetectionConfidence: 0.5,
+                        minTrackingConfidence: 0.5
+                    });
+                    
+                    this.pose.onResults(this.onPoseResults.bind(this));
+                    
+                    // Initialize camera
+                    this.camera = new Camera(this.videoElement, {
+                        onFrame: async () => {
+                            if (this.isTracking) {
+                                await this.pose.send({image: this.videoElement});
+                            }
+                        },
+                        width: 640,
+                        height: 480
+                    });
+                    
+                    await this.camera.start();
+                    this.setupCanvas();
+                    this.setupEventListeners();
+                    
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('mainApp').style.display = 'grid';
+                    
+                } catch (error) {
+                    console.error('Initialization error:', error);
+                    document.getElementById('loading').innerHTML = '<p>Error initializing camera or AI models. Please refresh and allow camera access.</p>';
+                }
+            }
+            
+            setupCanvas() {
+                this.canvasElement.width = this.videoElement.videoWidth || 640;
+                this.canvasElement.height = this.videoElement.videoHeight || 480;
+            }
+            
+            setupEventListeners() {
+                document.getElementById('startBtn').addEventListener('click', () => this.startTracking());
+                document.getElementById('stopBtn').addEventListener('click', () => this.stopTracking());
+                document.getElementById('resetBtn').addEventListener('click', () => this.resetStats());
+                document.getElementById('saveBtn').addEventListener('click', () => this.saveSession());
+                
+                // Resize canvas when video loads
+                this.videoElement.addEventListener('loadedmetadata', () => {
+                    this.setupCanvas();
+                });
+            }
+            
+            calculateAngle(point1, point2, point3) {
+                try {
+                    const a = [point1.x, point1.y];
+                    const b = [point2.x, point2.y];
+                    const c = [point3.x, point3.y];
+                    
+                    const ba = [a[0] - b[0], a[1] - b[1]];
+                    const bc = [c[0] - b[0], c[1] - b[1]];
+                    
+                    const dotProduct = ba[0] * bc[0] + ba[1] * bc[1];
+                    const magnitudeBA = Math.sqrt(ba[0] * ba[0] + ba[1] * ba[1]);
+                    const magnitudeBC = Math.sqrt(bc[0] * bc[0] + bc[1] * bc[1]);
+                    
+                    const cosineAngle = dotProduct / (magnitudeBA * magnitudeBC);
+                    const angle = Math.acos(Math.max(-1, Math.min(1, cosineAngle)));
+                    
+                    return angle * (180 / Math.PI);
+                } catch {
+                    return 0;
+                }
+            }
+            
+            calculateVelocity(positions) {
+                if (positions.length < 2) return 0;
+                
+                const recent = positions.slice(-5); // Last 5 frames
+                if (recent.length < 2) return 0;
+                
+                const dx = recent[recent.length - 1][0] - recent[0][0];
+                const dy = recent[recent.length - 1][1] - recent[0][1];
+                
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                return distance / (0.1 * recent.length);
+            }
+            
+            detectShootingMotion(landmarks) {
+                if (!landmarks) return { detected: false, shotData: null };
+                
+                const currentTime = Date.now();
+                if (currentTime - this.lastShotTime < this.shotCooldown) {
+                    return { detected: false, shotData: null };
+                }
+                
+                // Get key landmarks
+                const leftShoulder = landmarks[11];
+                const rightShoulder = landmarks[12];
+                const leftElbow = landmarks[13];
+                const rightElbow = landmarks[14];
+                const leftWrist = landmarks[15];
+                const rightWrist = landmarks[16];
+                const nose = landmarks[0];
+                
+                // Determine shooting hand (higher wrist)
+                let shootingShoulder, shootingElbow, shootingWrist, shootingSide;
+                if (rightWrist.y < leftWrist.y) {
+                    shootingShoulder = rightShoulder;
+                    shootingElbow = rightElbow;
+                    shootingWrist = rightWrist;
+                    shootingSide = 'right';
+                } else {
+                    shootingShoulder = leftShoulder;
+                    shootingElbow = leftElbow;
+                    shootingWrist = leftWrist;
+                    shootingSide = 'left';
+                }
+                
+                // Calculate shooting arm angle
+                const elbowAngle = this.calculateAngle(shootingShoulder, shootingElbow, shootingWrist);
+                
+                // Check conditions
+                const wristAboveShoulder = shootingWrist.y < shootingShoulder.y;
+                const armExtended = elbowAngle > this.armExtensionThreshold;
+                
+                // Store hand position for velocity calculation
+                this.handPositions.push([shootingWrist.x, shootingWrist.y]);
+                if (this.handPositions.length > this.maxHandPositions) {
+                    this.handPositions.shift();
+                }
+                
+                // Calculate wrist velocity
+                const wristVelocity = this.calculateVelocity(this.handPositions);
+                
+                // Detect shooting motion
+                const isShooting = wristAboveShoulder && armExtended && wristVelocity > this.wristSnapThreshold;
+                
+                if (isShooting) {
+                    // Calculate release angle
+                    const verticalAngle = Math.atan2(
+                        shootingWrist.x - shootingShoulder.x,
+                        shootingShoulder.y - shootingWrist.y
+                    );
+                    const releaseAngle = Math.abs(verticalAngle * (180 / Math.PI));
+                    
+                    const shotData = {
+                        timestamp: new Date().toISOString(),
+                        releasePoint: [
+                            parseInt(shootingWrist.x * this.canvasElement.width),
+                            parseInt(shootingWrist.y * this.canvasElement.height)
+                        ],
+                        peakHeight: 1.0 - shootingWrist.y,
+                        releaseAngle: releaseAngle,
+                        wristSnapSpeed: wristVelocity,
+                        elbowAngle: elbowAngle,
+                        confidence: 0.8
+                    };
+                    
+                    return { detected: true, shotData: shotData };
+                }
+                
+                return { detected: false, shotData: null };
+            }
+            
+            analyzeShotResult(shotData) {
+                let score = 0;
+                
+                // Optimal release angle (around 45-50 degrees)
+                if (shotData.releaseAngle >= 40 && shotData.releaseAngle <= 55) {
+                    score += 0.3;
+                }
+                
+                // Optimal elbow angle (close to 90 degrees at release)
+                if (shotData.elbowAngle >= 80 && shotData.elbowAngle <= 100) {
+                    score += 0.2;
+                }
+                
+                // Good wrist snap (medium velocity)
+                if (shotData.wristSnapSpeed >= 0.3 && shotData.wristSnapSpeed <= 0.8) {
+                    score += 0.3;
+                }
+                
+                // High release point
+                if (shotData.peakHeight > 0.6) {
+                    score += 0.2;
+                }
+                
+                // Predict result based on score
+                shotData.result = score >= 0.6 ? 'make' : 'miss';
+                shotData.confidence = score;
+            }
+            
+            onPoseResults(results) {
+                this.canvasCtx.save();
+                this.canvasCtx.clearRect(0, 0, this.canvasElement.width, this.canvasElement.height);
+                
+                // Draw pose landmarks
+                if (results.poseLandmarks) {
+                    this.drawConnectors(this.canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, {
+                        color: '#00FF00',
+                        lineWidth: 2
+                    });
+                    this.drawLandmarks(this.canvasCtx, results.poseLandmarks, {
+                        color: '#FF0000',
+                        lineWidth: 2
+                    });
+                    
+                    // Detect shooting motion
+                    const shootingResult = this.detectShootingMotion(results.poseLandmarks);
+                    
+                    if (shootingResult.detected) {
+                        this.analyzeShotResult(shootingResult.shotData);
+                        this.shotsHistory.unshift(shootingResult.shotData);
+                        this.lastShotTime = Date.now();
+                        this.updateStatistics();
+                        this.showShotDetected();
+                        console.log('Shot detected!', shootingResult.shotData);
+                        
+                        // Draw release point
+                        this.canvasCtx.beginPath();
+                        this.canvasCtx.arc(shootingResult.shotData.releasePoint[0], shootingResult.shotData.releasePoint[1], 10, 0, 2 * Math.PI);
+                        this.canvasCtx.fillStyle = '#FFFF00';
+                        this.canvasCtx.fill();
+                    }
+                }
+                
+                this.drawStats();
+                this.canvasCtx.restore();
+            }
+            
+            drawConnectors(ctx, landmarks, connections, style) {
+                ctx.strokeStyle = style.color;
+                ctx.lineWidth = style.lineWidth;
+                
+                connections.forEach(connection => {
+                    const start = landmarks[connection[0]];
+                    const end = landmarks[connection[1]];
+                    
+                    if (start && end) {
+                        ctx.beginPath();
+                        ctx.moveTo(start.x * ctx.canvas.width, start.y * ctx.canvas.height);
+                        ctx.lineTo(end.x * ctx.canvas.width, end.y * ctx.canvas.height);
+                        ctx.stroke();
+                    }
+                });
+            }
+            
+            drawLandmarks(ctx, landmarks, style) {
+                ctx.fillStyle = style.color;
+                
+                landmarks.forEach(landmark => {
+                    ctx.beginPath();
+                    ctx.arc(landmark.x * ctx.canvas.width, landmark.y * ctx.canvas.height, 3, 0, 2 * Math.PI);
+                    ctx.fill();
+                });
+            }
+            
+            drawStats() {
+                const ctx = this.canvasCtx;
+                ctx.fillStyle = 'white';
+                ctx.font = '16px Arial';
+                ctx.strokeStyle = 'black';
+                ctx.lineWidth = 2;
+                
+                const stats = [
+                    `Total Shots: ${this.stats.totalShots}`,
+                    `Makes: ${this.stats.makes}`,
+                    `Misses: ${this.stats.misses}`,
+                    `Accuracy: ${this.stats.accuracy.toFixed(1)}%`
+                ];
+                
+                stats.forEach((stat, index) => {
+                    const y = 30 + (index * 25);
+                    ctx.strokeText(stat, 10, y);
+                    ctx.fillText(stat, 10, y);
+                });
+            }
+            
+            updateStatistics() {
+                this.stats.totalShots = this.shotsHistory.length;
+                this.stats.makes = this.shotsHistory.filter(shot => shot.result === 'make').length;
+                this.stats.misses = this.shotsHistory.filter(shot => shot.result === 'miss').length;
+                
+                if (this.stats.totalShots > 0) {
+                    this.stats.accuracy = (this.stats.makes / this.stats.totalShots) * 100;
+                }
+                
+                // Calculate averages
+                const validShots = this.shotsHistory.filter(shot => shot.result);
+                if (validShots.length > 0) {
+                    this.stats.avgReleaseAngle = validShots.reduce((sum, shot) => sum + shot.releaseAngle, 0) / validShots.length;
+                    this.stats.avgElbowAngle = validShots.reduce((sum, shot) => sum + shot.elbowAngle, 0) / validShots.length;
+                }
+                
+                this.updateStatsDisplay();
+            }
+            
+            updateStatsDisplay() {
+                document.getElementById('totalShots').textContent = this.stats.totalShots;
+                document.getElementById('makes').textContent = this.stats.makes;
+                document.getElementById('misses').textContent = this.stats.misses;
+                
+                const avgReleaseDisplay = this.stats.avgReleaseAngle > 0 ? 
+                    `${this.stats.avgReleaseAngle.toFixed(1)}°` : '-°';
+                document.getElementById('avgReleaseAngle').textContent = avgReleaseDisplay;
+                
+                const avgElbowDisplay = this.stats.avgElbowAngle > 0 ? 
+                    `${this.stats.avgElbowAngle.toFixed(1)}°` : '-°';
+                document.getElementById('avgElbowAngle').textContent = avgElbowDisplay;
+                
+                // Update accuracy circle
+                const accuracy = this.stats.accuracy;
+                const circumference = 2 * Math.PI * 50;
+                const offset = circumference - (accuracy / 100) * circumference;
+                
+                document.querySelector('.accuracy-fill').style.strokeDashoffset = offset;
+                document.querySelector('.accuracy-text').textContent = `${accuracy.toFixed(0)}%`;
+                
+                // Update recent shots display
+                this.updateRecentShotsDisplay();
+            }
+            
+            updateRecentShotsDisplay() {
+                const recentShotsContainer = document.getElementById('recentShots');
+                recentShotsContainer.innerHTML = '';
+                
+                const recentShots = this.shotsHistory.slice(0, 10);
+                recentShots.forEach(shot => {
+                    const shotElement = document.createElement('div');
+                    shotElement.className = `shot-result shot-${shot.result}`;
+                    shotElement.textContent = shot.result === 'make' ? '✓' : '✗';
+                    shotElement.title = `Release: ${shot.releaseAngle.toFixed(1)}° | Elbow: ${shot.elbowAngle.toFixed(1)}°`;
+                    recentShotsContainer.appendChild(shotElement);
+                });
+            }
+            
+            showShotDetected() {
+                const element = document.getElementById('shotDetected');
+                element.classList.add('show');
+                setTimeout(() => {
+                    element.classList.remove('show');
+                }, 1500);
+            }
+            
+            startTracking() {
+                this.isTracking = true;
+                document.getElementById('startBtn').disabled = true;
+                document.getElementById('stopBtn').disabled = false;
+            }
+            
+            stopTracking() {
+                this.isTracking = false;
+                document.getElementById('startBtn').disabled = false;
+                document.getElementById('stopBtn').disabled = true;
+            }
+            
+            resetStats() {
+                if (confirm('Are you sure you want to reset all statistics?')) {
+                    this.shotsHistory = [];
+                    this.stats = {
+                        totalShots: 0,
+                        makes: 0,
+                        misses: 0,
+                        accuracy: 0.0,
+                        avgReleaseAngle: 0.0,
+                        avgElbowAngle: 0.0
+                    };
+                    this.updateStatsDisplay();
+                }
+            }
+            
+            saveSession() {
+                const sessionData = {
+                    timestamp: new Date().toISOString(),
+                    statistics: this.stats,
+                    shots: this.shotsHistory
+                };
+                
+                const dataStr = JSON.stringify(sessionData, null, 2);
+                const dataBlob = new Blob([dataStr], {type: 'application/json'});
+                const url = URL.createObjectURL(dataBlob);
+                
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `basketball_session_${new Date().toISOString().split('T')[0]}.json`;
+                link.click();
+                
+                URL.revokeObjectURL(url);
+            }
+        }
+        
+        // MediaPipe pose connections
+        const POSE_CONNECTIONS = [
+            [11, 12], [11, 13], [13, 15], [15, 17], [15, 19], [15, 21], [17, 19],
+            [12, 14], [14, 16], [16, 18], [16, 20], [16, 22], [18, 20],
+            [11, 23], [12, 24], [23, 24], [23, 25], [24, 26], [25, 27], [26, 28],
+            [27
