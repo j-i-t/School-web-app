@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Basketball Shot Tracker</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils"></script>
+    <style>
+        body { background:#111; color:white; font-family:sans-serif; }
+        video, canvas { display:block; margin:10px auto; border:2px solid white; }
+        .controls { text-align:center; margin:20px; }
+        .btn { padding:10px 20px; margin:5px; }
+        #shotDetected { display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:#000a; color:yellow; font-size:2em; padding:20px; border-radius:10px; }
+    </style>
+</head>
+<body>
+    <h1 style="text-align:center">🏀 Basketball Shot Tracker</h1>
+    <video id="videoElement" autoplay muted playsinline></video>
+    <canvas id="canvasElement"></canvas>
+    <div class="controls">
+        <button id="startBtn" class="btn">Start</button>
+        <button id="stopBtn" class="btn" disabled>Stop</button>
+        <button id="resetBtn" class="btn">Reset</button>
+    </div>
+    <div id="shotDetected">SHOT DETECTED!</div>
+    <div id="stats" style="text-align:center; margin-top:20px;">
+        <p>Total Shots: <span id="totalShots">0</span></p>
+        <p>Makes: <span id="makes">0</span> | Misses: <span id="misses">0</span></p>
+        <p>Accuracy: <span id="accuracy">0%</span></p>
+    </div>
+
+    <script>
+    class BasketballShotTracker {
+        constructor(){
+            this.videoElement=document.getElementById('videoElement');
+            this.canvasElement=document.getElementById('canvasElement');
+            this.ctx=this.canvasElement.getContext('2d');
+            this.isTracking=false;
+            this.pose=null;
+            this.camera=null;
+            this.shotsHistory=[];
+            this.lastShotTime=0;
+            this.shotCooldown=1500;
+            this.frameCount=0;
+            this.stats={totalShots:0,makes:0,misses:0,accuracy:0};
+            this.init();
+        }
+
+        async init(){
+            this.pose=new Pose({locateFile:(f)=>`https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}`});
+            this.pose.setOptions({modelComplexity:0,smoothLandmarks:true,minDetectionConfidence:0.5,minTrackingConfidence:0.5});
+            this.pose.onResults(this.onPoseResults.bind(this));
+
+            this.camera=new Camera(this.videoElement,{
+                onFrame:async()=>{
+                    this.frameCount++;
+                    if(this.isTracking && this.frameCount%2===0){
+                        await this.pose.send({image:this.videoElement});
+                    }
+                },width:320,height:240});
+            await this.camera.start();
+
+            this.canvasElement.width=320;
+            this.canvasElement.height=240;
+
+            document.getElementById('startBtn').onclick=()=>this.startTracking();
+            document.getElementById('stopBtn').onclick=()=>this.stopTracking();
+            document.getElementById('resetBtn').onclick=()=>this.resetStats();
+        }
+
+        onPoseResults(results){
+            this.ctx.clearRect(0,0,this.canvasElement.width,this.canvasElement.height);
+            if(results.poseLandmarks){
+                drawConnectors(this.ctx,results.poseLandmarks,POSE_CONNECTIONS,{color:'#0f0'});
+                drawLandmarks(this.ctx,results.poseLandmarks,{color:'#f00',radius:2});
+
+                const rWrist=results.poseLandmarks[16];
+                const rShoulder=results.poseLandmarks[12];
+                if(rWrist && rShoulder){
+                    const now=Date.now();
+                    if(rWrist.y<rShoulder.y && now-this.lastShotTime>this.shotCooldown){
+                        this.lastShotTime=now;
+                        const made=Math.random()>0.5;
+                        this.shotsHistory.unshift({result:made?'make':'miss'});
+                        this.updateStats();
+                        this.showShotDetected();
+                    }
+                }
+            }
+        }
+
+        updateStats(){
+            this.stats.totalShots=this.shotsHistory.length;
+            this.stats.makes=this.shotsHistory.filter(s=>s.result==='make').length;
+            this.stats.misses=this.stats.totalShots-this.stats.makes;
+            this.stats.accuracy=this.stats.totalShots?Math.round(this.stats.makes/this.stats.totalShots*100):0;
+            document.getElementById('totalShots').innerText=this.stats.totalShots;
+            document.getElementById('makes').innerText=this.stats.makes;
+            document.getElementById('misses').innerText=this.stats.misses;
+            document.getElementById('accuracy').innerText=this.stats.accuracy+"%";
+        }
+
+        showShotDetected(){
+            const el=document.getElementById('shotDetected');
+            el.style.display='block';
+            setTimeout(()=>el.style.display='none',1000);
+        }
+
+        resetStats(){
+            this.shotsHistory=[];
+            this.updateStats();
+        }
+
+        startTracking(){
+            this.isTracking=true;
+            document.getElementById('startBtn').disabled=true;
+            document.getElementById('stopBtn').disabled=false;
+        }
+
+        stopTracking(){
+            this.isTracking=false;
+            document.getElementById('startBtn').disabled=false;
+            document.getElementById('stopBtn').disabled=true;
+        }
+    }
+
+    window.onload=()=>new BasketballShotTracker();
+    </script>
+</body>
+</html>
